@@ -26,7 +26,7 @@
 </div>
 <h1></h1>
 
-> **Note:** This is a fork of [duckdb/duckdb-wasm](https://github.com/duckdb/duckdb-wasm) (tag `v1.33.0`) with the OPFS temp directory patch from [dt/duckdb-wasm@opfs-tempdir](https://github.com/dt/duckdb-wasm/tree/opfs-tempdir) cherry-picked on top.
+> **Note:** This is a fork of [duckdb/duckdb-wasm](https://github.com/duckdb/duckdb-wasm) (tag `v1.32.0`) with the OPFS temp directory patch from [dt/duckdb-wasm@opfs-tempdir](https://github.com/dt/duckdb-wasm/tree/opfs-tempdir) cherry-picked on top.
 
 [DuckDB](https://duckdb.org) is an in-process SQL OLAP Database Management System.
 

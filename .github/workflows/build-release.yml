@@ -1,0 +1,452 @@
+name: 'Build & Release'
+on:
+    push:
+        tags:
+            - 'v*-opfs-tempdir'
+    workflow_dispatch:
+        inputs:
+            override_git_describe:
+                type: string
+
+concurrency:
+    group: ${{ github.workflow }}-${{ github.ref }}
+    cancel-in-progress: true
+
+env:
+    EMSCRIPTEN_VERSION: '3.1.71'
+    EMSCRIPTEN_VERSION_COI: '3.1.57'
+    DEFAULT_USE_GENERATED_EXPORTED_LIST: 'no'
+
+jobs:
+    clang_format:
+        name: Clang-Format
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+
+            - name: Lint ./lib
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      python3 ./scripts/run_clang_format.py \
+                        --exclude ./lib/build \
+                        --exclude ./lib/third_party \
+                        -r ./lib/
+
+    eslint:
+        name: ESLint
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+
+            - name: Cache node_modules
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ./node_modules
+                      ./packages/benchmarks/node_modules
+                      ./packages/duckdb-wasm/node_modules
+                      ./packages/duckdb-wasm-shell/node_modules
+                  key: ${{ runner.os }}-yarn-${{ hashFiles('./yarn.lock') }}
+                  restore-keys: |
+                      ${{ runner.os }}-yarn-
+
+            - name: Prepare repository
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      yarn install --frozen-lockfile --prefer-offline
+
+            - name: Lint @duckdb/duckdb-wasm
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      yarn workspace @duckdb/duckdb-wasm run lint
+
+            - name: Lint @duckdb/duckdb-wasm-shell
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      yarn workspace @duckdb/duckdb-wasm-shell run lint
+
+    dataprep:
+        name: Dataprep
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+
+            - name: Cache rust build
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ./.cargo/bin/
+                      ./.cargo/registry/index/
+                      ./.cargo/registry/cache/
+                      ./.cargo/git/db/
+                      ./target
+                  key: ${{ runner.os }}-dataprep-${{ hashFiles('./Cargo.lock') }}-${{ hashFiles('./tools/dataprep/src/*.rs') }}
+                  restore-keys: |
+                      ${{ runner.os }}-dataprep-
+
+            - name: Build generator
+              shell: bash
+              run: |
+                      cargo build --manifest-path=./Cargo.toml --release -p dataprep
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: dataprep
+                  path: |
+                      ./target/release/dataprep
+                  retention-days: 1
+
+    tpchgen:
+        name: TPCH Generator
+        runs-on: ubuntu-latest
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+
+            - name: Cache generator
+              uses: actions/cache@v4
+              id: cache-generator
+              with:
+                  path: ./submodules/tpch-dbgen/dbgen/dbgen
+                  key: ${{ runner.os }}-tpch-dbgen
+
+            - name: Build generator
+              if: steps.cache-generator.outputs.cache-hit != 'true'
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      make -C ./submodules/tpch-dbgen/dbgen/ dbgen
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: tpch-dbgen
+                  path: |
+                      ./submodules/tpch-dbgen/dbgen/dbgen
+                  retention-days: 1
+
+    wasm_mvp_loadable:
+        name: Wasm / mvp (loadable)
+        runs-on: ubuntu-latest
+        needs:
+            - dataprep
+            - tpchgen
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+                  fetch-depth: 0
+
+            - name: Install dependencies
+              run: |
+                  sudo apt install wabt
+
+            - name: Prepare repository
+              run: |
+                  make apply_patches
+                  cd submodules/duckdb && git tag ${{ inputs.override_git_describe }}
+
+            - uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: ${{ env.EMSCRIPTEN_VERSION }}
+
+            - name: Setup Ccache
+              uses: hendrikmuhs/ccache-action@main
+              with:
+                  key: ${{ github.job }}
+
+            - name: Git submodule status
+              run: |
+                  git submodule status > git_submodule_status.txt
+
+            - name: Build Wasm module
+              run: |
+                  USE_GENERATED_EXPORTED_LIST="$DEFAULT_USE_GENERATED_EXPORTED_LIST" DUCKDB_PLATFORM="wasm_mvp" DUCKDB_WASM_LOADABLE_EXTENSIONS=1 GEN=ninja ./scripts/wasm_build_lib.sh relsize mvp
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wasm-mvp-loadable
+                  path: |
+                      ./packages/duckdb-wasm/src/bindings/duckdb-mvp.js
+                      ./packages/duckdb-wasm/src/bindings/duckdb-mvp.wasm
+                  retention-days: 1
+
+    wasm_eh_loadable:
+        name: Wasm / eh (loadable)
+        runs-on: ubuntu-latest
+        needs:
+            - dataprep
+            - tpchgen
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+                  fetch-depth: 0
+
+            - name: Install dependencies
+              run: |
+                  sudo apt install wabt
+
+            - name: Prepare repository
+              run: |
+                  make apply_patches
+                  cd submodules/duckdb && git tag ${{ inputs.override_git_describe }}
+
+            - uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: ${{ env.EMSCRIPTEN_VERSION }}
+
+            - name: Setup Ccache
+              uses: hendrikmuhs/ccache-action@main
+              with:
+                  key: ${{ github.job }}
+
+            - name: Git submodule status
+              run: |
+                  git submodule status > git_submodule_status.txt
+
+            - name: Build Wasm module
+              run: |
+                  USE_GENERATED_EXPORTED_LIST="$DEFAULT_USE_GENERATED_EXPORTED_LIST" DUCKDB_PLATFORM="wasm_eh" DUCKDB_WASM_LOADABLE_EXTENSIONS=1 GEN=ninja ./scripts/wasm_build_lib.sh relsize eh
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wasm-eh-loadable
+                  path: |
+                      ./packages/duckdb-wasm/src/bindings/duckdb-eh.js
+                      ./packages/duckdb-wasm/src/bindings/duckdb-eh.wasm
+                  retention-days: 1
+
+    wasm_coi_loadable:
+        name: Wasm / coi (loadable)
+        runs-on: ubuntu-latest
+        needs:
+            - dataprep
+            - tpchgen
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+                  fetch-depth: 0
+
+            - name: Install dependencies
+              run: |
+                  sudo apt install wabt
+
+            - name: Prepare repository
+              run: |
+                  make apply_patches
+                  cd submodules/duckdb && git tag ${{ inputs.override_git_describe }}
+
+            - uses: mymindstorm/setup-emsdk@v14
+              with:
+                  version: ${{ env.EMSCRIPTEN_VERSION_COI }}
+
+            - name: Setup Ccache
+              uses: hendrikmuhs/ccache-action@main
+              with:
+                  key: ${{ github.job }}
+
+            - name: Git submodule status
+              run: |
+                  git submodule status > git_submodule_status.txt
+
+            - name: Build Wasm module
+              run: |
+                  USE_GENERATED_EXPORTED_LIST="$DEFAULT_USE_GENERATED_EXPORTED_LIST" DUCKDB_PLATFORM="wasm_threads" DUCKDB_WASM_LOADABLE_EXTENSIONS="signed" GEN=ninja ./scripts/wasm_build_lib.sh relsize coi
+
+            - name: Upload artifact
+              uses: actions/upload-artifact@v4
+              with:
+                  name: wasm-coi-loadable
+                  path: |
+                      ./packages/duckdb-wasm/src/bindings/duckdb-coi.js
+                      ./packages/duckdb-wasm/src/bindings/duckdb-coi.pthread.js
+                      ./packages/duckdb-wasm/src/bindings/duckdb-coi.wasm
+                  retention-days: 1
+
+    build_and_release:
+        name: Build & Upload Release
+        runs-on: ubuntu-latest
+        needs:
+            - wasm_mvp_loadable
+            - wasm_eh_loadable
+            - wasm_coi_loadable
+            - clang_format
+            - eslint
+        permissions:
+            contents: write
+        steps:
+            - uses: actions/checkout@v4
+              with:
+                  submodules: 'recursive'
+                  fetch-depth: 0
+
+            - uses: actions/setup-node@v4
+              with:
+                  node-version: '18.x'
+
+            - name: Git submodule status
+              run: |
+                  git submodule status > git_submodule_status.txt
+
+            - name: Cache rust build
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ./.cargo/bin/
+                      ./.cargo/registry/index/
+                      ./.cargo/registry/cache/
+                      ./.cargo/git/db/
+                      ./target
+                  key: ${{ runner.os }}-shell-${{ hashFiles('./Cargo.lock') }}-${{ hashFiles('./packages/duckdb-wasm-shell/crate/src/**') }}
+                  restore-keys: |
+                      ${{ runner.os }}-shell-
+
+            - name: Cache node_modules
+              uses: actions/cache@v4
+              with:
+                  path: |
+                      ./node_modules
+                      ./packages/benchmarks/node_modules
+                      ./packages/duckdb-wasm/node_modules
+                      ./packages/duckdb-wasm-shell/node_modules
+                  key: ${{ runner.os }}-yarn-${{ hashFiles('./yarn.lock') }}
+                  restore-keys: |
+                      ${{ runner.os }}-yarn-
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: dataprep
+                  path: ./target/release/
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: tpch-dbgen
+                  path: ./submodules/tpch-dbgen/dbgen/
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: wasm-mvp-loadable
+                  path: ./packages/duckdb-wasm/src/bindings/
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: wasm-eh-loadable
+                  path: ./packages/duckdb-wasm/src/bindings/
+
+            - uses: actions/download-artifact@v4
+              with:
+                  name: wasm-coi-loadable
+                  path: ./packages/duckdb-wasm/src/bindings/
+
+            - name: Prepare repository
+              run: |
+                  git fetch --tags --no-recurse-submodules -f
+                  (cd ./submodules/duckdb && git fetch --all --tags)
+
+            - name: Prepare environment
+              uses: duckdb/duckdb-wasm-ci-env@f10a0954b7b2b98e8526e0f7bbcb10e614defcbd
+              with:
+                  script: |-
+                      git config --global --add safe.directory '*'
+                      mkdir -p ./lib/build/wasm/release ./reports
+                      yarn install --frozen-lockfile
+                      ./scripts/generate_tpch_tbl.sh 0.01
+                      ./scripts/generate_tpch_arrow.sh 0.01
+                      ./scripts/generate_tpch_duckdb.sh 0.01
+                      ./scripts/generate_tpch_sqlite.sh 0.01
+                      ./scripts/generate_uni.sh
+                      ./scripts/npm_version.sh
+
+            - name: Build @duckdb/duckdb-wasm
+              shell: bash
+              run: |
+                      rm -rf ./packages/duckdb-wasm/dist/
+                      yarn workspace @duckdb/duckdb-wasm build:release
+
+            - name: Test @duckdb/duckdb-wasm on Chrome
+              shell: bash
+              run: |
+                      CHROME_BIN=`which google-chrome` yarn workspace @duckdb/duckdb-wasm test:chrome
+
+            - name: Test @duckdb/duckdb-wasm on Node.js
+              shell: bash
+              run: |
+                      yarn workspace @duckdb/duckdb-wasm test:node
+
+            - name: Package dist
+              shell: bash
+              run: |
+                  cd ./packages/duckdb-wasm
+                  zip -r ../../duckdb-wasm-dist.zip dist/
+
+            - name: Create GitHub Release
+              uses: softprops/action-gh-release@v2
+              with:
+                  files: duckdb-wasm-dist.zip
+                  generate_release_notes: true
+
+    deploy_pages:
+        name: Deploy to GitHub Pages
+        runs-on: ubuntu-latest
+        needs:
+            - build_and_release
+        permissions:
+            contents: read
+            pages: write
+            id-token: write
+        environment:
+            name: github-pages
+            url: ${{ steps.deployment.outputs.page_url }}
+        steps:
+            - name: Download all release assets
+              env:
+                  GH_TOKEN: ${{ github.token }}
+              run: |
+                  mkdir -p site
+                  gh api repos/${{ github.repository }}/releases --paginate --jq '.[].tag_name' | while read -r tag; do
+                      echo "Processing release: ${tag}"
+                      mkdir -p "site/${tag}"
+                      if gh release download "${tag}" -p 'duckdb-wasm-dist.zip' -D /tmp --repo "${{ github.repository }}" 2>/dev/null; then
+                          unzip -o /tmp/duckdb-wasm-dist.zip -d "site/${tag}/"
+                          if [ -d "site/${tag}/dist" ]; then
+                              mv site/${tag}/dist/* "site/${tag}/"
+                              rmdir "site/${tag}/dist"
+                          fi
+                          rm -f /tmp/duckdb-wasm-dist.zip
+                          echo "  ✓ Extracted to site/${tag}/"
+                      else
+                          echo "  ⚠ No duckdb-wasm-dist.zip found for ${tag}, skipping"
+                          rmdir "site/${tag}"
+                      fi
+                  done
+                  echo '<!DOCTYPE html><html><head><title>duckdb-wasm releases</title></head><body><h1>duckdb-wasm releases</h1><ul>' > site/index.html
+                  for dir in site/v*/; do
+                      tag=$(basename "$dir")
+                      echo "<li><a href=\"${tag}/\">${tag}</a></li>" >> site/index.html
+                  done
+                  echo '</ul></body></html>' >> site/index.html
+
+            - name: Upload Pages artifact
+              uses: actions/upload-pages-artifact@v3
+              with:
+                  path: site
+
+            - name: Deploy to GitHub Pages
+              id: deployment
+              uses: actions/deploy-pages@v4
