@@ -8,23 +8,16 @@
 </div>
 
 <div align="center">
-  <a href="https://www.npmjs.com/package/@duckdb/duckdb-wasm/v/latest">
-    <img src="https://img.shields.io/npm/v/@duckdb/duckdb-wasm?logo=npm" alt="duckdb-wasm package on NPM">
+  <a href="https://www.npmjs.com/package/duckdb-wasm-opfs-tempdir">
+    <img src="https://img.shields.io/npm/v/duckdb-wasm-opfs-tempdir?logo=npm" alt="duckdb-wasm-opfs-tempdir on NPM">
   </a>
-  <a href="https://github.com/duckdb/duckdb-wasm/actions">
-    <img src="https://github.com/duckdb/duckdb-wasm/actions/workflows/main.yml/badge.svg?branch=main" alt="Github Actions Badge">
-  </a>
-  <a href="https://discord.duckdb.org">
-    <img src="https://shields.io/discord/909674491309850675" alt="Join Discord" />
-  </a>
-  <a href="https://github.com/duckdb/duckdb/releases/">
-    <img src="https://img.shields.io/github/v/release/duckdb/duckdb?color=brightgreen&display_name=tag&logo=duckdb&logoColor=white" alt="Latest DuckDB Release">
-  </a>
-  <a href="https://www.jsdelivr.com/package/npm/@duckdb/duckdb-wasm">
-    <img src="https://data.jsdelivr.com/v1/package/npm/@duckdb/duckdb-wasm/badge?style=rounded" alt="jsdeliver stats">
+  <a href="https://github.com/ramSeraph/duckdb-wasm/actions">
+    <img src="https://github.com/ramSeraph/duckdb-wasm/actions/workflows/build-release.yml/badge.svg?branch=v1.33.0-opfs-tempdir" alt="Build & Release">
   </a>
 </div>
 <h1></h1>
+
+> **Note:** This is a fork of [duckdb/duckdb-wasm](https://github.com/duckdb/duckdb-wasm) (tag `v1.33.0`) with the OPFS temp directory patch from [dt/duckdb-wasm@opfs-tempdir](https://github.com/dt/duckdb-wasm/tree/opfs-tempdir) cherry-picked on top.
 
 [DuckDB](https://duckdb.org) is an in-process SQL OLAP Database Management System.
 

@@ -1,12 +1,11 @@
 <img src="https://raw.githubusercontent.com/duckdb/duckdb-wasm/main/misc/duckdb_wasm.svg" height="64">
 
-[![Main](https://github.com/duckdb/duckdb-wasm/actions/workflows/main.yml/badge.svg)](https://github.com/duckdb/duckdb-wasm/actions/workflows/main.yml)
-[![Benchmarks](https://github.com/duckdb/duckdb-wasm/actions/workflows/benchmarks.yml/badge.svg)](https://github.com/duckdb/duckdb-wasm/actions/workflows/benchmarks.yml)
-[![duckdb](https://cdn.jsdelivr.net/npm/@duckdb/duckdb-wasm@latest/dist/img/duckdb_version_badge.svg)](https://github.com/duckdb/duckdb)
-[![npm](https://img.shields.io/npm/v/@duckdb/duckdb-wasm?logo=npm)](https://www.npmjs.com/package/@duckdb/duckdb-wasm/v/latest)
-[![JSDevlivr](https://data.jsdelivr.com/v1/package/npm/@duckdb/duckdb-wasm/badge?style=rounded)](https://www.jsdelivr.com/package/npm/@duckdb/duckdb-wasm)
+[![Build & Release](https://github.com/ramSeraph/duckdb-wasm/actions/workflows/build-release.yml/badge.svg?branch=v1.33.0-opfs-tempdir)](https://github.com/ramSeraph/duckdb-wasm/actions/workflows/build-release.yml)
+[![npm](https://img.shields.io/npm/v/duckdb-wasm-opfs-tempdir?logo=npm)](https://www.npmjs.com/package/duckdb-wasm-opfs-tempdir)
 
-**DuckDB-Wasm**
+**DuckDB-Wasm (OPFS temp_directory fork)**
+
+> This is a fork of [@duckdb/duckdb-wasm](https://github.com/duckdb/duckdb-wasm) (tag `v1.33.0`) with the OPFS `temp_directory` patch from [dt/duckdb-wasm@opfs-tempdir](https://github.com/dt/duckdb-wasm/tree/opfs-tempdir) applied. Published as [`duckdb-wasm-opfs-tempdir`](https://www.npmjs.com/package/duckdb-wasm-opfs-tempdir) on npm.
 
 DuckDB-Wasm is an in-process analytical SQL database for the browser. It is powered by WebAssembly, speaks Arrow fluently, reads Parquet, CSV and JSON files backed by Filesystem APIs or HTTP requests and has been tested with Chrome, Firefox, Safari and Node.js. Read the [launch blog post](https://duckdb.org/2021/10/29/duckdb-wasm.html).
 
