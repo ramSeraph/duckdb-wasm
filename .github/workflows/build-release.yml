@@ -288,8 +288,10 @@ jobs:
             - wasm_coi_loadable
             - clang_format
             - eslint
+        environment: npm
         permissions:
             contents: write
+            id-token: write
         steps:
             - uses: actions/checkout@v4
               with:
@@ -298,7 +300,7 @@ jobs:
 
             - uses: actions/setup-node@v4
               with:
-                  node-version: '18.x'
+                  node-version: '24.x'
                   registry-url: 'https://registry.npmjs.org'
 
             - name: Git submodule status
@@ -391,8 +393,6 @@ jobs:
                       yarn workspace @duckdb/duckdb-wasm test:node
 
             - name: Publish to npm
-              env:
-                  NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
               shell: bash
               run: |
                   cd ./packages/duckdb-wasm
